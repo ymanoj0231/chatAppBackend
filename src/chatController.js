@@ -3,8 +3,7 @@ import pool from "./database/mysql.js";
 
 export const getChats = async (req, res) => {
     try {
-        const userId = Number(req.query.userId);
-
+        const userId = Number(req.user.userId);
         if (!Number.isInteger(userId) || userId <= 0) {
             return res.status(400).json({
                 error: "Valid userId is required",

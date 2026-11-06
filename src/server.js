@@ -5,6 +5,7 @@ import app from "./app.js";
 import connectMongoDB from "./database/mongodb.js";
 import Message from "./database/models/message.js";
 import pool from "./database/mysql.js";
+import jwt from "jsonwebtoken";
 
 
 const httpServer = http.createServer(app)
@@ -16,6 +17,24 @@ const io = new Server(httpServer, {
     }
 })
 
+io.use((socket, next) => {
+    try {
+        const token = socket.handshake.auth?.token;
+
+        if (!token) {
+            return next(new Error("Authentication token required"));
+        }
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+        socket.data.userId = String(decoded.userId);
+
+        next();
+    } catch (error) {
+        next(new Error("Invalid or expired token"));
+    }
+});
+
 io.on("connection", (socket) => {
     console.log("Client connected:", socket.id);
 
@@ -23,13 +42,12 @@ io.on("connection", (socket) => {
     socket.on("message:sent", async (data, acknowledge) => {
         try {
             const chatId = String(data?.chatId ?? "");
-            const senderId = String(data?.senderId ?? "");
+            const senderId = socket.data.userId;
             const text = data?.text?.trim();
 
             // Validate input
             if (
                 !/^[1-9]\d*$/.test(chatId) ||
-                !/^[1-9]\d*$/.test(senderId) ||
                 typeof text !== "string" ||
                 !text ||
                 text.length > 5000
@@ -74,7 +92,10 @@ io.on("connection", (socket) => {
             };
 
             // Broadcast after successful persistence
-            io.emit("message:recieved", message);
+            // io.emit("message:recieved", message);
+
+            // Broadcast the message to specific client
+            io.to(`chat:${chatId}`).emit("message:recieved", message);
 
             acknowledge?.({
                 success: true,
@@ -91,6 +112,51 @@ io.on("connection", (socket) => {
         }
     });
 
+
+    socket.on("chat:join", async (data, acknowledge) => {
+        try {
+            const userId = socket.data.userId;
+            const chatId = String(data?.chatId ?? "");
+
+            if (
+                !/^[1-9]\d*$/.test(userId) ||
+                !/^[1-9]\d*$/.test(chatId)
+            ) {
+                return acknowledge?.({
+                    success: false,
+                    error: "Invalid user or chat ID",
+                });
+            }
+
+            const [participants] = await pool.execute(
+                `SELECT 1
+             FROM chat_participants
+             WHERE chat_id = ? AND user_id = ?
+             LIMIT 1`,
+                [chatId, userId]
+            );
+
+            if (!participants.length) {
+                return acknowledge?.({
+                    success: false,
+                    error: "Unauthorized chat access",
+                });
+            }
+
+            socket.join(`chat:${chatId}`);
+
+            acknowledge?.({
+                success: true
+            });
+        } catch (error) {
+            console.error("Failed to join chat:", error);
+
+            acknowledge?.({
+                success: false,
+                error: "Unable to join chat",
+            });
+        }
+    });
 
     socket.on("disconnect", () => {
         console.log("Client disconnected:", socket.id);

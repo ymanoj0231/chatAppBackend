@@ -2,6 +2,7 @@
 import express from "express";
 import cors from "cors";
 import router from "./routes.js";
+import authRoutes from './authRouter.js'
 import { testConnection } from "./database/testMysql.js";
 
 
@@ -21,7 +22,7 @@ app.get("/health", async (req, res) => {
     });
 });
 app.use("/api/chats", router)
-
+app.use("/api/auth", authRoutes);
 
 // const httpServer = http.createServer(app);
 

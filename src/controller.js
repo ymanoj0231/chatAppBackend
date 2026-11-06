@@ -1,8 +1,24 @@
 import Message from "./database/models/message.js";
+import pool from "./database/mysql.js";
 
 const getChat = async (req, res) => {
     try {
         const { chatId } = req.params;
+        const userId = req.user.userId;
+
+        const [participants] = await pool.execute(
+            `SELECT 1
+            FROM chat_participants
+            WHERE chat_id = ? AND user_id = ?
+            LIMIT 1`,
+            [chatId, userId]
+        );
+
+        if (participants.length === 0) {
+            return res.status(403).json({
+                error: "You are not a participant of this chat",
+            });
+        }
 
         const parsedLimit = Number.parseInt(req.query.limit, 10);
         const limit = Number.isInteger(parsedLimit)
